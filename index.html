@@ -7,7 +7,6 @@
     <meta name="description" content="近くの消火器を検索してルート案内するアプリ">
     <meta name="theme-color" content="#ff4444">
     
-    <!-- PWA対応 -->
     <link rel="manifest" href="manifest.json">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -27,7 +26,6 @@
         width: 100%;
       }
       
-      /* 🔥 コントロールパネルのスタイル */
       .control-panel {
         position: absolute;
         top: 10px;
@@ -62,7 +60,6 @@
         box-shadow: 0 1px 3px rgba(0,0,0,0.2);
       }
       
-      /* 🔥 情報パネルのスタイル */
       .info-panel {
         position: absolute;
         bottom: 20px;
@@ -144,32 +141,6 @@
         color: #888;
       }
       
-      /* 🔥 移動トラッキング統計 */
-      .tracking-stats {
-        display: flex;
-        gap: 15px;
-        margin-top: 10px;
-        padding-top: 10px;
-        border-top: 1px solid #eee;
-      }
-      
-      .tracking-item {
-        text-align: center;
-        flex: 1;
-      }
-      
-      .tracking-number {
-        font-size: 16px;
-        font-weight: bold;
-        color: #2196F3;
-      }
-      
-      .tracking-label {
-        font-size: 11px;
-        color: #888;
-      }
-      
-      /* 🔥 ローディング表示 */
       .loading-overlay {
         position: absolute;
         top: 50%;
@@ -203,7 +174,6 @@
         100% { transform: rotate(360deg); }
       }
       
-      /* 🔥 インストールボタン */
       #install-btn {
         position: absolute;
         bottom: 20px;
@@ -224,7 +194,6 @@
         display: block;
       }
       
-      /* 🔥 レスポンシブ対応 */
       @media (max-width: 768px) {
         .control-panel {
           top: 5px;
@@ -259,14 +228,6 @@
           font-size: 18px;
         }
         
-        .tracking-stats {
-          gap: 10px;
-        }
-        
-        .tracking-number {
-          font-size: 14px;
-        }
-        
         #install-btn {
           bottom: 10px;
           right: 10px;
@@ -277,7 +238,6 @@
     </style>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   </head>
   <body>
     <div id="map"></div>
@@ -285,10 +245,8 @@
     <div class="control-panel">
       <button id="recenter" class="control-btn">📍 現在地に戻る</button>
       <button id="toggle-extinguishers" class="control-btn">🧯 消火器を非表示</button>
-      <button id="toggle-tracking" class="control-btn" style="background: #2196F3; color: white;">🚶 トラッキング: ON</button>
-      <button id="clear-path" class="control-btn">🗑️ 軌跡クリア</button>
       <button id="show-info" class="control-btn">📊 情報表示</button>
-      <button id="find-nearest" class="control-btn" style="background: #ff4444; color: white; font-weight: bold;">🔍 最寄り検索(500m)</button>
+      <button id="find-nearest" class="control-btn" style="background: #ff4444; color: white; font-weight: bold;">🔍 最寄り検索(240m)</button>
       <button id="find-all" class="control-btn" style="background: #4CAF50; color: white;">🌍 全域検索</button>
     </div>
     
@@ -319,27 +277,12 @@
             <div class="stat-label">最寄り(m)</div>
           </div>
         </div>
-        <div class="tracking-stats">
-          <div class="tracking-item">
-            <div class="tracking-number" id="total-distance">0</div>
-            <div class="tracking-label">移動距離(m)</div>
-          </div>
-          <div class="tracking-item">
-            <div class="tracking-number" id="current-speed">0</div>
-            <div class="tracking-label">速度(km/h)</div>
-          </div>
-          <div class="tracking-item">
-            <div class="tracking-number" id="tracking-points">0</div>
-            <div class="tracking-label">記録点数</div>
-          </div>
-        </div>
         <div id="current-status">現在地を取得中...</div>
         <div id="nearest-info">位置情報が必要です</div>
       </div>
     </div>
 
     <script>
-      // 🔥 PWA インストール対応
       let deferredPrompt;
       const installBtn = document.getElementById('install-btn');
       
@@ -351,16 +294,13 @@
       
       installBtn.addEventListener('click', async () => {
         if (!deferredPrompt) return;
-        
         deferredPrompt.prompt();
         const { outcome } = await deferredPrompt.userChoice;
-        
         console.log(`インストール結果: ${outcome}`);
         deferredPrompt = null;
         installBtn.classList.remove('show');
       });
       
-      // 🔥 Service Worker登録
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('sw.js')
@@ -372,7 +312,6 @@
       let map;
       let userMarker;
       let currentPos = null;
-      let previousPos = null;
       let watchId = null;
       let firstUpdate = true;
       let mapInitialized = false;
@@ -381,61 +320,42 @@
       let routeVisible = false;
       let directionsService;
       let directionsRenderer;
-      let trackingPath = [];
-      let trackingPolyline = null;
-      let totalDistance = 0;
-      let lastUpdateTime = Date.now();
-      let currentSpeed = 0;
-      let trackingEnabled = true;
 
       const DISTRICT_CONFIG = {
         nakano: {
           name: '中野区',
-          type: 'csv',
           file: 'nakanoku.csv',
           columns: { lat: '緯度', lng: '経度', address: '住所', count: '設置本数', id: '管理番号', status: '設置状況' },
           filter: (row) => row['設置状況'] === '設置中'
         },
         machida: {
           name: '町田市',
-          type: 'csv',
           file: 'machidasi.csv',
           columns: { lat: '緯度', lng: '経度', address: '住所', count: null, id: '消火器番号' }
         },
         taito: {
           name: '台東区',
-          type: 'csv',
           file: 'taitouku.csv',
           columns: { lat: '緯度', lng: '経度', address: '所在', count: null, id: '管理番号' }
         },
         setagaya: {
           name: '世田谷区',
-          type: 'csv',
           file: 'setagayaku.csv',
           columns: { lat: '緯度', lng: '経度', address: '住所', count: null, id: null }
         },
         fuchu: {
           name: '府中市',
-          type: 'csv',
           file: 'fuchusi.csv',
           columns: { lat: '緯度', lng: '経度', address: '住所(町名から)', count: null, id: '管理番号' }
         }
       };
 
       function initMap() {
-        if (mapInitialized) {
-          console.log("initMap は既に実行済み");
-          return;
-        }
+        if (mapInitialized) return;
         mapInitialized = true;
         
-        console.log("initMap 実行開始");
-        
         const mapElement = document.getElementById("map");
-        if (!mapElement) {
-          console.error("❌ map要素が見つかりません！");
-          return;
-        }
+        if (!mapElement) return;
         
         const fallback = { lat: 35.681236, lng: 139.767125 };
         
@@ -479,19 +399,34 @@
                 lng: position.coords.longitude,
               };
               
-              // 位置情報の更新処理
-              if (trackingEnabled) {
-                updateUserPosition(newPos, position.coords.heading, position.coords.speed);
+              currentPos = newPos;
+              userMarker.setPosition(currentPos);
+              userMarker.setTitle("現在地");
+              
+              if (position.coords.heading !== null && position.coords.heading !== undefined && !isNaN(position.coords.heading)) {
+                userMarker.setIcon({
+                  path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                  scale: 5,
+                  fillColor: "#4285F4",
+                  fillOpacity: 1,
+                  strokeColor: "white",
+                  strokeWeight: 2,
+                  rotation: position.coords.heading
+                });
               } else {
-                currentPos = newPos;
-                userMarker.setPosition(currentPos);
-                userMarker.setTitle("現在地");
+                userMarker.setIcon({
+                  path: google.maps.SymbolPath.CIRCLE,
+                  scale: 8,
+                  fillColor: "#4285F4",
+                  fillOpacity: 1,
+                  strokeColor: "white",
+                  strokeWeight: 3
+                });
               }
 
               if (firstUpdate) {
                 map.setCenter(currentPos);
                 firstUpdate = false;
-                console.log("現在地に移動完了");
                 loadAllExtinguishers();
               }
             },
@@ -506,190 +441,25 @@
             }
           );
         } else {
-          console.error("このブラウザは位置情報をサポートしていません");
           loadAllExtinguishers();
         }
 
-        const recenterBtn = document.getElementById("recenter");
-        if (recenterBtn) {
-          recenterBtn.addEventListener("click", () => {
-            if (currentPos) {
-              map.setCenter(currentPos);
-              map.setZoom(17);
-              console.log("手動で現在地に戻りました");
-            }
-          });
-        }
-
-        const toggleBtn = document.getElementById("toggle-extinguishers");
-        const showInfoBtn = document.getElementById("show-info");
-        const closeInfoBtn = document.getElementById("close-info");
-        const findNearestBtn = document.getElementById("find-nearest");
-        const findAllBtn = document.getElementById("find-all");
-        const toggleTrackingBtn = document.getElementById("toggle-tracking");
-        const clearPathBtn = document.getElementById("clear-path");
-        
-        if (toggleBtn) {
-          toggleBtn.addEventListener("click", toggleExtinguishers);
-        }
-        if (showInfoBtn) {
-          showInfoBtn.addEventListener("click", toggleInfoPanel);
-        }
-        if (closeInfoBtn) {
-          closeInfoBtn.addEventListener("click", hideInfoPanel);
-        }
-        if (findNearestBtn) {
-          findNearestBtn.addEventListener("click", findAndShowNearestExtinguisher);
-        }
-        if (findAllBtn) {
-          findAllBtn.addEventListener("click", findAndShowNearestFromAll);
-        }
-        if (toggleTrackingBtn) {
-          toggleTrackingBtn.addEventListener("click", toggleTracking);
-        }
-        if (clearPathBtn) {
-          clearPathBtn.addEventListener("click", clearTrackingPath);
-        }
-        
-        // 移動軌跡用のポリライン初期化
-        trackingPolyline = new google.maps.Polyline({
-          path: [],
-          geodesic: true,
-          strokeColor: '#4285F4',
-          strokeOpacity: 0.7,
-          strokeWeight: 4,
-          map: map
-        });
-      }
-      
-      function updateUserPosition(newPos, heading, speed) {
-        // 前回の位置を保存
-        if (currentPos) {
-          previousPos = { ...currentPos };
-          
-          // 移動距離を計算
-          const distance = calculateDistance(previousPos, newPos);
-          
-          // 現在時刻
-          const now = Date.now();
-          const timeDiff = (now - lastUpdateTime) / 1000; // 秒
-          
-          // 最小移動距離のしきい値（ノイズ除去）
-          if (distance > 3) { // 3m以上移動した場合のみ記録
-            totalDistance += distance;
-            
-            // 軌跡に追加
-            trackingPath.push(newPos);
-            trackingPolyline.setPath(trackingPath);
-            
-            // 速度計算 (km/h)
-            if (timeDiff > 0) {
-              currentSpeed = (distance / timeDiff) * 3.6; // m/s to km/h
-            }
-            
-            lastUpdateTime = now;
-            
-            // 統計更新
-            updateTrackingStats();
-            
-            console.log(`📍 位置更新: 移動距離 ${distance.toFixed(1)}m, 速度 ${currentSpeed.toFixed(1)}km/h`);
+        document.getElementById("recenter").addEventListener("click", () => {
+          if (currentPos) {
+            map.setCenter(currentPos);
+            map.setZoom(17);
           }
-        } else {
-          // 初回位置
-          trackingPath.push(newPos);
-          trackingPolyline.setPath(trackingPath);
-        }
+        });
         
-        currentPos = newPos;
-        
-        // マーカー位置更新
-        userMarker.setPosition(currentPos);
-        userMarker.setTitle("現在地");
-        
-        // 方向があれば矢印アイコンで表示
-        if (heading !== null && heading !== undefined && !isNaN(heading)) {
-          userMarker.setIcon({
-            path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-            scale: 5,
-            fillColor: "#4285F4",
-            fillOpacity: 1,
-            strokeColor: "white",
-            strokeWeight: 2,
-            rotation: heading
-          });
-        } else {
-          // 方向情報がない場合は円形マーカー
-          userMarker.setIcon({
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 8,
-            fillColor: "#4285F4",
-            fillOpacity: 1,
-            strokeColor: "white",
-            strokeWeight: 3
-          });
-        }
-      }
-      
-      function toggleTracking() {
-        trackingEnabled = !trackingEnabled;
-        const btn = document.getElementById("toggle-tracking");
-        
-        if (trackingEnabled) {
-          btn.textContent = "🚶 トラッキング: ON";
-          btn.style.background = "#2196F3";
-          btn.style.color = "white";
-          trackingPolyline.setMap(map);
-          updateCurrentStatus("✅ 移動トラッキング有効");
-        } else {
-          btn.textContent = "⏸️ トラッキング: OFF";
-          btn.style.background = "#999";
-          btn.style.color = "white";
-          trackingPolyline.setMap(null);
-          updateCurrentStatus("⏸️ 移動トラッキング無効");
-        }
-        
-        console.log(`トラッキング: ${trackingEnabled ? 'ON' : 'OFF'}`);
-      }
-      
-      function clearTrackingPath() {
-        trackingPath = [];
-        trackingPolyline.setPath([]);
-        totalDistance = 0;
-        currentSpeed = 0;
-        lastUpdateTime = Date.now();
-        
-        // 現在位置を新しい開始点として追加
-        if (currentPos) {
-          trackingPath.push(currentPos);
-          trackingPolyline.setPath(trackingPath);
-        }
-        
-        updateTrackingStats();
-        updateCurrentStatus("🗑️ 移動軌跡をクリアしました");
-        console.log("移動軌跡をクリア");
-      }
-      
-      function updateTrackingStats() {
-        const distanceElement = document.getElementById('total-distance');
-        const speedElement = document.getElementById('current-speed');
-        const pointsElement = document.getElementById('tracking-points');
-        
-        if (distanceElement) {
-          distanceElement.textContent = totalDistance.toFixed(0);
-        }
-        
-        if (speedElement) {
-          speedElement.textContent = currentSpeed.toFixed(1);
-        }
-        
-        if (pointsElement) {
-          pointsElement.textContent = trackingPath.length;
-        }
+        document.getElementById("toggle-extinguishers").addEventListener("click", toggleExtinguishers);
+        document.getElementById("show-info").addEventListener("click", toggleInfoPanel);
+        document.getElementById("close-info").addEventListener("click", hideInfoPanel);
+        document.getElementById("find-nearest").addEventListener("click", findAndShowNearestExtinguisher);
+        document.getElementById("find-all").addEventListener("click", findAndShowNearestFromAll);
       }
 
       async function loadAllExtinguishers() {
         try {
-          console.log("全自治体の消火器データ読み込み開始");
           showLoading(true);
           clearExtinguisherMarkers();
           
@@ -706,13 +476,9 @@
             const districtName = Object.values(DISTRICT_CONFIG)[index].name;
             if (result.status === 'fulfilled') {
               totalCount += result.value;
-              console.log(`✅ ${districtName}: ${result.value}件`);
-            } else {
-              console.error(`❌ ${districtName}: ${result.reason.message}`);
             }
           });
           
-          console.log(`\n🎉 全${totalCount}個の消火器マーカー設置完了`);
           showLoading(false);
           updateStats();
           updateCurrentStatus(`${Object.keys(DISTRICT_CONFIG).length}自治体のデータ読み込み完了（${totalCount}件）`);
@@ -720,9 +486,7 @@
           if (currentPos) {
             findNearestExtinguisher();
           }
-          
         } catch (err) {
-          console.error("消火器データ読み込みエラー:", err);
           showLoading(false);
           addDummyExtinguisher();
           updateCurrentStatus("エラー: ダミーデータで動作中");
@@ -742,10 +506,6 @@
             skipEmptyLines: true,
             encoding: 'UTF-8',
             complete: function(results) {
-              if (results.errors.length > 0) {
-                console.warn(`${config.name} CSV解析警告:`, results.errors.slice(0, 3));
-              }
-              
               let markerCount = 0;
               results.data.forEach((row, index) => {
                 if (config.filter && !config.filter(row)) return;
@@ -776,7 +536,16 @@
           position: { lat, lng },
           map: map,
           title: `${districtName} - 消火器 (${count}本) - ${address}`,
-          icon: createExtinguisherIcon(count),
+          icon: {
+            url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+                <circle cx="16" cy="16" r="14" fill="#ff4444" stroke="white" stroke-width="2"/>
+                <text x="16" y="20" text-anchor="middle" fill="white" font-family="Arial" font-size="12" font-weight="bold">${count}</text>
+              </svg>
+            `),
+            scaledSize: new google.maps.Size(32, 32),
+            anchor: new google.maps.Point(16, 16)
+          },
         });
         
         const infoWindow = new google.maps.InfoWindow({
@@ -790,19 +559,6 @@
         marker.infoWindow = infoWindow;
         marker.districtName = districtName;
         extinguisherMarkers.push(marker);
-      }
-
-      function createExtinguisherIcon(count) {
-        return {
-          url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-              <circle cx="16" cy="16" r="14" fill="#ff4444" stroke="white" stroke-width="2"/>
-              <text x="16" y="20" text-anchor="middle" fill="white" font-family="Arial" font-size="12" font-weight="bold">${count}</text>
-            </svg>
-          `),
-          scaledSize: new google.maps.Size(32, 32),
-          anchor: new google.maps.Point(16, 16)
-        };
       }
 
       function createInfoWindowContent(managementNo, count, address, lat, lng, districtName = '') {
@@ -859,7 +615,7 @@
         if (routeVisible) {
           clearRoute();
           if (findNearestBtn) {
-            findNearestBtn.textContent = "🔍 最寄り検索(500m)";
+            findNearestBtn.textContent = "🔍 最寄り検索(240m)";
             findNearestBtn.style.background = "#ff4444";
           }
           updateCurrentStatus("ルートを非表示にしました");
@@ -878,10 +634,10 @@
           return;
         }
         
-        if (nearest.distance > 500) {
+        if (nearest.distance > 240) {
           clearRoute();
-          updateCurrentStatus(`⚠️ 500m以内に消火器が見つかりません（最寄り: ${nearest.distance.toFixed(0)}m）`);
-          alert(`⚠️ 500m以内に消火器が見つかりません\n\n最寄りの消火器まで: ${nearest.distance.toFixed(0)}m\n場所: ${nearest.marker.districtName}`);
+          updateCurrentStatus(`⚠️ 240m以内に消火器が見つかりません（最寄り: ${nearest.distance.toFixed(0)}m）`);
+          alert(`⚠️ 240m以内に消火器が見つかりません\n\n最寄りの消火器まで: ${nearest.distance.toFixed(0)}m\n場所: ${nearest.marker.districtName}`);
           return;
         }
         
@@ -912,11 +668,7 @@
             if (findNearestBtn) {
               findNearestBtn.textContent = "❌ ルート非表示";
             }
-            
-            console.log(`🚶 徒歩ルート: ${actualDistance}m, 所要時間: ${duration}`);
           } else {
-            console.error('❌ ルート取得失敗:', status);
-            updateCurrentStatus(`❌ ルート取得に失敗しました: ${status}`);
             alert('道路ルートの取得に失敗しました。直線距離で表示します。');
             showStraightLineRoute(nearest, findNearestBtn);
           }
@@ -1020,11 +772,7 @@
               findAllBtn.textContent = "❌ ルート非表示";
               findAllBtn.style.background = "#f44336";
             }
-            
-            console.log(`🚶 全域検索ルート: ${actualDistance}m, 所要時間: ${duration}`);
           } else {
-            console.error('❌ ルート取得失敗:', status);
-            updateCurrentStatus(`❌ ルート取得に失敗: ${status}`);
             showStraightLineRouteForAll(nearest, findAllBtn);
           }
         });
@@ -1097,10 +845,7 @@
                  lng >= bbox.west && lng <= bbox.east;
         });
         
-        console.log(`🔍 検索範囲: ${extinguisherMarkers.length}件 → ${candidates.length}件に絞り込み`);
-        
         if (candidates.length === 0) {
-          console.warn("⚠️ 近くに消火器が見つかりません。検索範囲を全体に拡大します。");
           return findNearestFromAll();
         }
         
@@ -1121,7 +866,6 @@
         });
         
         if (nearestMarker) {
-          console.log(`✅ 最寄りの消火器: ${nearestMarker.getTitle()}, 距離: ${minDistance.toFixed(0)}m`);
           updateNearestInfo(nearestMarker.getTitle(), minDistance);
           
           return {
@@ -1156,7 +900,6 @@
         });
         
         if (nearestMarker) {
-          console.log(`✅ 最寄りの消火器（全体検索）: ${nearestMarker.getTitle()}, 距離: ${minDistance.toFixed(0)}m`);
           updateNearestInfo(nearestMarker.getTitle(), minDistance);
           
           return {
@@ -1180,8 +923,6 @@
         if (toggleBtn) {
           toggleBtn.textContent = isVisible ? "🧯 消火器を表示" : "🧯 消火器を非表示";
         }
-        
-        console.log(isVisible ? "消火器マーカーを非表示にしました" : "消火器マーカーを表示しました");
         
         updateStats();
       }
@@ -1207,7 +948,16 @@
             position: { lat: data.lat, lng: data.lng },
             map: map,
             title: `${data.district} - テスト用消火器 (1本)`,
-            icon: createExtinguisherIcon(1),
+            icon: {
+              url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+                  <circle cx="16" cy="16" r="14" fill="#ff4444" stroke="white" stroke-width="2"/>
+                  <text x="16" y="20" text-anchor="middle" fill="white" font-family="Arial" font-size="12" font-weight="bold">1</text>
+                </svg>
+              `),
+              scaledSize: new google.maps.Size(32, 32),
+              anchor: new google.maps.Point(16, 16)
+            }
           });
           
           const infoWindow = new google.maps.InfoWindow({
@@ -1223,7 +973,6 @@
           extinguisherMarkers.push(marker);
         });
         
-        console.log("ダミー消火器マーカー設置完了（5自治体分）");
         updateStats();
       }
 
@@ -1261,8 +1010,6 @@
           const visibleCount = extinguisherMarkers.filter(marker => marker.getMap() !== null).length;
           visibleElement.textContent = visibleCount;
         }
-        
-        updateTrackingStats();
       }
 
       function updateCurrentStatus(status) {
