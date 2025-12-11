@@ -246,13 +246,13 @@
       <button id="recenter" class="control-btn">現在地に戻る</button>
       <button id="toggle-extinguishers" class="control-btn">消火器を非表示</button>
       <button id="show-info" class="control-btn">情報表示</button>
-      <button id="find-nearest" class="control-btn" style="background: #ff4444; color: white; font-weight: bold;">最寄り検索</button>
+      <button id="find-nearest" class="control-btn" style="background: #ff4444; color: white; font-weight: bold;">🔍 最寄り検索</button>
       <button id="find-all" class="control-btn" style="background: #4CAF50; color: white;">🌍 全域検索</button>
     </div>
     
     <div id="loading" class="loading-overlay">
       <div class="spinner"></div>
-      消火器データを読み込み中...
+      <span id="loading-text">消火器データを読み込み中...</span>
     </div>
     
     <button id="install-btn">📱 ホーム画面に追加</button>
@@ -460,7 +460,7 @@
 
       async function loadAllExtinguishers() {
         try {
-          showLoading(true);
+          showLoading(true, '消火器データを読み込み中...');
           clearExtinguisherMarkers();
           
           let totalCount = 0;
@@ -567,7 +567,7 @@
         
         if (currentPos) {
           const distance = calculateDistance(currentPos, { lat, lng });
-          distanceText = `<p><strong>距離:</strong> ${distance.toFixed(0)}m</p>`;
+          distanceText = `<p><strong>直線距離:</strong> ${distance.toFixed(0)}m</p>`;
           
           const walkingTime = Math.ceil(distance / 80);
           walkingTimeText = `<p><strong>徒歩:</strong> 約${walkingTime}分</p>`;
@@ -609,13 +609,13 @@
         routeVisible = false;
       }
 
-      function findAndShowNearestExtinguisher() {
+      async function findAndShowNearestExtinguisher() {
         const findNearestBtn = document.getElementById("find-nearest");
         
         if (routeVisible) {
           clearRoute();
           if (findNearestBtn) {
-            findNearestBtn.textContent = "🔍 最寄り検索(240m)";
+            findNearestBtn.textContent = "🔍 最寄り検索";
             findNearestBtn.style.background = "#ff4444";
           }
           updateCurrentStatus("ルートを非表示にしました");
@@ -627,99 +627,120 @@
           return;
         }
         
-        const nearest = findNearestExtinguisher();
+        showLoading(true, '道路距離で最寄りを検索中...');
+        
+        const nearest = await findNearestByRoadDistance(240);
+        
+        showLoading(false);
         
         if (!nearest) {
-          updateCurrentStatus("❌ 消火器データが読み込まれていません");
+          updateCurrentStatus("❌ 240m以内に消火器が見つかりません");
+          alert('⚠️ 240m以内に消火器が見つかりません');
           return;
         }
         
-        if (nearest.distance > 240) {
-          clearRoute();
-          updateCurrentStatus(`⚠️ 240m以内に消火器が見つかりません（最寄り: ${nearest.distance.toFixed(0)}m）`);
-          alert(`⚠️ 240m以内に消火器が見つかりません\n\n最寄りの消火器まで: ${nearest.distance.toFixed(0)}m\n場所: ${nearest.marker.districtName}`);
-          return;
-        }
-        
-        const markerPos = nearest.marker.getPosition();
-        const request = {
-          origin: currentPos,
-          destination: { lat: markerPos.lat(), lng: markerPos.lng() },
-          travelMode: google.maps.TravelMode.WALKING
-        };
-        
-        directionsService.route(request, (result, status) => {
-          if (status === 'OK') {
-            directionsRenderer.setMap(map);
-            directionsRenderer.setDirections(result);
-            routeVisible = true;
-            
-            const route = result.routes[0];
-            const leg = route.legs[0];
-            const actualDistance = leg.distance.value;
-            const duration = leg.duration.text;
-            
-            if (nearest.infoWindow) {
-              nearest.infoWindow.open(map, nearest.marker);
-            }
-            
-            updateCurrentStatus(`✅ ルート表示: ${actualDistance}m先（${duration}）`);
-            
-            if (findNearestBtn) {
-              findNearestBtn.textContent = "❌ ルート非表示";
-            }
-          } else {
-            alert('道路ルートの取得に失敗しました。直線距離で表示します。');
-            showStraightLineRoute(nearest, findNearestBtn);
-          }
-        });
-      }
-      
-      function showStraightLineRoute(nearest, findNearestBtn) {
-        const markerPos = nearest.marker.getPosition();
-        const path = [
-          currentPos,
-          { lat: markerPos.lat(), lng: markerPos.lng() }
-        ];
-        
-        clearRoute();
-        
-        currentRoute = new google.maps.Polyline({
-          path: path,
-          geodesic: true,
-          strokeColor: '#FF9800',
-          strokeOpacity: 0.8,
-          strokeWeight: 4,
-          map: map
-        });
-        
+        directionsRenderer.setMap(map);
+        directionsRenderer.setDirections(nearest.directions);
         routeVisible = true;
         
-        const bounds = new google.maps.LatLngBounds();
-        bounds.extend(currentPos);
-        bounds.extend(markerPos);
-        map.fitBounds(bounds);
-        
-        setTimeout(() => {
-          const currentZoom = map.getZoom();
-          if (currentZoom > 17) {
-            map.setZoom(17);
-          }
-        }, 100);
-        
-        if (nearest.infoWindow) {
-          nearest.infoWindow.open(map, nearest.marker);
+        if (nearest.marker.infoWindow) {
+          nearest.marker.infoWindow.open(map, nearest.marker);
         }
         
-        const walkingTime = Math.ceil(nearest.distance / 80);
-        updateCurrentStatus(`⚠️ 直線ルート: ${nearest.distance.toFixed(0)}m先（徒歩約${walkingTime}分）`);
+        updateCurrentStatus(`✅ ルート表示: ${nearest.distance.toFixed(0)}m先（${nearest.duration}）`);
+        updateNearestInfo(nearest.marker.getTitle(), nearest.distance);
         
         if (findNearestBtn) {
           findNearestBtn.textContent = "❌ ルート非表示";
         }
       }
 
-      function findAndShowNearestFromAll() {
+      async function findNearestByRoadDistance(maxDistance = null) {
+        if (!currentPos || extinguisherMarkers.length === 0) return null;
+        
+        const searchRadius = 0.004;
+        const bbox = {
+          north: currentPos.lat + searchRadius,
+          south: currentPos.lat - searchRadius,
+          east: currentPos.lng + searchRadius,
+          west: currentPos.lng - searchRadius
+        };
+        
+        let candidates = extinguisherMarkers.filter(marker => {
+          if (marker.getMap() === null) return false;
+          
+          const markerPos = marker.getPosition();
+          const lat = markerPos.lat();
+          const lng = markerPos.lng();
+          
+          return lat >= bbox.south && lat <= bbox.north &&
+                 lng >= bbox.west && lng <= bbox.east;
+        });
+        
+        if (candidates.length === 0) {
+          return null;
+        }
+        
+        candidates = candidates.map(marker => {
+          const markerPos = marker.getPosition();
+          const straightDistance = calculateDistance(currentPos, {
+            lat: markerPos.lat(),
+            lng: markerPos.lng()
+          });
+          return { marker, straightDistance };
+        });
+        
+        candidates.sort((a, b) => a.straightDistance - b.straightDistance);
+        
+        const top3 = candidates.slice(0, 3);
+        
+        const results = [];
+        
+        for (const candidate of top3) {
+          const markerPos = candidate.marker.getPosition();
+          const request = {
+            origin: currentPos,
+            destination: { lat: markerPos.lat(), lng: markerPos.lng() },
+            travelMode: google.maps.TravelMode.WALKING
+          };
+          
+          try {
+            const result = await new Promise((resolve, reject) => {
+              directionsService.route(request, (result, status) => {
+                if (status === 'OK') {
+                  resolve(result);
+                } else {
+                  reject(new Error(status));
+                }
+              });
+            });
+            
+            const leg = result.routes[0].legs[0];
+            const roadDistance = leg.distance.value;
+            
+            if (maxDistance === null || roadDistance <= maxDistance) {
+              results.push({
+                marker: candidate.marker,
+                distance: roadDistance,
+                duration: leg.duration.text,
+                directions: result
+              });
+            }
+          } catch (error) {
+            console.warn('Directions API失敗:', error);
+          }
+        }
+        
+        if (results.length === 0) {
+          return null;
+        }
+        
+        results.sort((a, b) => a.distance - b.distance);
+        
+        return results[0];
+      }
+
+      async function findAndShowNearestFromAll() {
         const findAllBtn = document.getElementById("find-all");
         
         if (routeVisible) {
@@ -737,85 +758,27 @@
           return;
         }
         
-        const nearest = findNearestFromAll();
+        showLoading(true, '全域から最寄りを検索中...');
+        
+        const nearest = await findNearestByRoadDistance(null);
+        
+        showLoading(false);
         
         if (!nearest) {
           updateCurrentStatus("❌ 消火器データが読み込まれていません");
           return;
         }
         
-        const markerPos = nearest.marker.getPosition();
-        const request = {
-          origin: currentPos,
-          destination: { lat: markerPos.lat(), lng: markerPos.lng() },
-          travelMode: google.maps.TravelMode.WALKING
-        };
-        
-        directionsService.route(request, (result, status) => {
-          if (status === 'OK') {
-            directionsRenderer.setMap(map);
-            directionsRenderer.setDirections(result);
-            routeVisible = true;
-            
-            const route = result.routes[0];
-            const leg = route.legs[0];
-            const actualDistance = leg.distance.value;
-            const duration = leg.duration.text;
-            
-            if (nearest.infoWindow) {
-              nearest.infoWindow.open(map, nearest.marker);
-            }
-            
-            updateCurrentStatus(`✅ 全域検索ルート: ${actualDistance}m先（${duration}）- ${nearest.marker.districtName}`);
-            
-            if (findAllBtn) {
-              findAllBtn.textContent = "❌ ルート非表示";
-              findAllBtn.style.background = "#f44336";
-            }
-          } else {
-            showStraightLineRouteForAll(nearest, findAllBtn);
-          }
-        });
-      }
-      
-      function showStraightLineRouteForAll(nearest, findAllBtn) {
-        const markerPos = nearest.marker.getPosition();
-        const path = [
-          currentPos,
-          { lat: markerPos.lat(), lng: markerPos.lng() }
-        ];
-        
-        clearRoute();
-        
-        currentRoute = new google.maps.Polyline({
-          path: path,
-          geodesic: true,
-          strokeColor: '#4CAF50',
-          strokeOpacity: 0.8,
-          strokeWeight: 4,
-          map: map
-        });
-        
+        directionsRenderer.setMap(map);
+        directionsRenderer.setDirections(nearest.directions);
         routeVisible = true;
         
-        const bounds = new google.maps.LatLngBounds();
-        bounds.extend(currentPos);
-        bounds.extend(markerPos);
-        map.fitBounds(bounds);
-        
-        setTimeout(() => {
-          const currentZoom = map.getZoom();
-          if (currentZoom > 17) {
-            map.setZoom(17);
-          }
-        }, 100);
-        
-        if (nearest.infoWindow) {
-          nearest.infoWindow.open(map, nearest.marker);
+        if (nearest.marker.infoWindow) {
+          nearest.marker.infoWindow.open(map, nearest.marker);
         }
         
-        const walkingTime = Math.ceil(nearest.distance / 80);
-        updateCurrentStatus(`⚠️ 全域検索（直線）: ${nearest.distance.toFixed(0)}m先（徒歩約${walkingTime}分）- ${nearest.marker.districtName}`);
+        updateCurrentStatus(`✅ 全域検索: ${nearest.distance.toFixed(0)}m先（${nearest.duration}）- ${nearest.marker.districtName}`);
+        updateNearestInfo(nearest.marker.getTitle(), nearest.distance);
         
         if (findAllBtn) {
           findAllBtn.textContent = "❌ ルート非表示";
@@ -976,10 +939,14 @@
         updateStats();
       }
 
-      function showLoading(show) {
+      function showLoading(show, text = '消火器データを読み込み中...') {
         const loadingElement = document.getElementById('loading');
+        const loadingTextElement = document.getElementById('loading-text');
         if (loadingElement) {
           loadingElement.classList.toggle('show', show);
+        }
+        if (loadingTextElement && show) {
+          loadingTextElement.textContent = text;
         }
       }
 
