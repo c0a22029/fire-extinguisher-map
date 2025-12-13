@@ -395,6 +395,20 @@
           zIndex: 1000
         });
 
+        // ★重要: イベントリスナーを先に設定
+        document.getElementById("recenter").addEventListener("click", () => {
+          if (currentPos) {
+            map.setCenter(currentPos);
+            map.setZoom(17);
+          }
+        });
+        
+        document.getElementById("toggle-extinguishers").addEventListener("click", toggleExtinguishers);
+        document.getElementById("show-info").addEventListener("click", toggleInfoPanel);
+        document.getElementById("close-info").addEventListener("click", hideInfoPanel);
+        document.getElementById("find-nearest").addEventListener("click", findAndShowNearestExtinguisher);
+        document.getElementById("find-all").addEventListener("click", findAndShowNearestFromAll);
+
         // テストモード時は指定位置を使用
         if (TEST_MODE) {
           currentPos = TEST_LOCATION;
@@ -458,19 +472,6 @@
         } else {
           loadAllExtinguishers();
         }
-
-        document.getElementById("recenter").addEventListener("click", () => {
-          if (currentPos) {
-            map.setCenter(currentPos);
-            map.setZoom(17);
-          }
-        });
-        
-        document.getElementById("toggle-extinguishers").addEventListener("click", toggleExtinguishers);
-        document.getElementById("show-info").addEventListener("click", toggleInfoPanel);
-        document.getElementById("close-info").addEventListener("click", hideInfoPanel);
-        document.getElementById("find-nearest").addEventListener("click", findAndShowNearestExtinguisher);
-        document.getElementById("find-all").addEventListener("click", findAndShowNearestFromAll);
       }
 
       async function loadAllExtinguishers() {
@@ -830,7 +831,7 @@
         let minDistance = Infinity;
         let nearestMarker = null;
         
-        candidates.forEach(marker => {
+      candidates.forEach(marker => {
           const markerPos = marker.getPosition();
           const distance = calculateDistance(currentPos, {
             lat: markerPos.lat(),
