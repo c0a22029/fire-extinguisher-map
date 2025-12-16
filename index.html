@@ -321,10 +321,6 @@
       let directionsService;
       let directionsRenderer;
 
-      // テストモード: trueにすると指定住所を現在地として使用
-      const TEST_MODE = true;
-      const TEST_LOCATION = { lat: 35.6045532, lng: 139.3301673 }; // 東京都中野区大和町1丁目6-2
-
       const DISTRICT_CONFIG = {
         nakano: {
           name: '中野区',
@@ -395,31 +391,6 @@
           zIndex: 1000
         });
 
-        // ★重要: イベントリスナーを先に設定
-        document.getElementById("recenter").addEventListener("click", () => {
-          if (currentPos) {
-            map.setCenter(currentPos);
-            map.setZoom(17);
-          }
-        });
-        
-        document.getElementById("toggle-extinguishers").addEventListener("click", toggleExtinguishers);
-        document.getElementById("show-info").addEventListener("click", toggleInfoPanel);
-        document.getElementById("close-info").addEventListener("click", hideInfoPanel);
-        document.getElementById("find-nearest").addEventListener("click", findAndShowNearestExtinguisher);
-        document.getElementById("find-all").addEventListener("click", findAndShowNearestFromAll);
-
-        // テストモード時は指定位置を使用
-        if (TEST_MODE) {
-          currentPos = TEST_LOCATION;
-          userMarker.setPosition(currentPos);
-          userMarker.setTitle("現在地（テストモード: 中野区大和町1-6-2）");
-          map.setCenter(currentPos);
-          map.setZoom(17);
-          loadAllExtinguishers();
-          return;
-        }
-
         if (navigator.geolocation) {
           watchId = navigator.geolocation.watchPosition(
             (position) => {
@@ -472,6 +443,19 @@
         } else {
           loadAllExtinguishers();
         }
+
+        document.getElementById("recenter").addEventListener("click", () => {
+          if (currentPos) {
+            map.setCenter(currentPos);
+            map.setZoom(17);
+          }
+        });
+        
+        document.getElementById("toggle-extinguishers").addEventListener("click", toggleExtinguishers);
+        document.getElementById("show-info").addEventListener("click", toggleInfoPanel);
+        document.getElementById("close-info").addEventListener("click", hideInfoPanel);
+        document.getElementById("find-nearest").addEventListener("click", findAndShowNearestExtinguisher);
+        document.getElementById("find-all").addEventListener("click", findAndShowNearestFromAll);
       }
 
       async function loadAllExtinguishers() {
@@ -831,7 +815,7 @@
         let minDistance = Infinity;
         let nearestMarker = null;
         
-      candidates.forEach(marker => {
+        candidates.forEach(marker => {
           const markerPos = marker.getPosition();
           const distance = calculateDistance(currentPos, {
             lat: markerPos.lat(),
